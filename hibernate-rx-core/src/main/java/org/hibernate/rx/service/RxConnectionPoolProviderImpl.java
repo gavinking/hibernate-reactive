@@ -1,6 +1,8 @@
 package org.hibernate.rx.service;
 
 import io.vertx.core.Vertx;
+import io.vertx.mssqlclient.MSSQLConnectOptions;
+import io.vertx.mssqlclient.MSSQLPool;
 import io.vertx.mysqlclient.MySQLPool;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Pool;
@@ -40,9 +42,12 @@ public class RxConnectionPoolProviderImpl implements RxConnectionPoolProvider, C
 
 		final Integer poolSize = ConfigurationHelper.getInt(AvailableSettings.POOL_SIZE, configurationValues, DEFAULT_POOL_SIZE);
 
-		final String url = ConfigurationHelper.getString(AvailableSettings.URL, configurationValues);
+		String url = ConfigurationHelper.getString(AvailableSettings.URL, configurationValues);
+		if ( url.contains(":sqlserver:") ) {
+			url = url.replaceFirst(";","?").replace(';','&');
+		}
 		final URI uri = JdbcUrlParser.parse( url );
-		final String database = uri.getPath().substring( 1 );
+		final String database = uri.getPath().isEmpty() ? "" : uri.getPath().substring( 1 );
 
 		if (username==null || password==null) {
 			String[] params = uri.getQuery().split("&");
@@ -64,10 +69,12 @@ public class RxConnectionPoolProviderImpl implements RxConnectionPoolProvider, C
 		switch ( uri.getScheme() ) {
 			case "postgresql":
 				PgConnectOptions pgOptions = new PgConnectOptions()
-						.setPort( uri.getPort() )
 						.setHost( uri.getHost() )
 						.setDatabase( database )
 						.setUser( username );
+				if ( uri.getPort()>0 ) {
+					pgOptions.setPort( uri.getPort() );
+				}
 				if (password != null) {
 					pgOptions.setPassword( password );
 				}
@@ -75,14 +82,28 @@ public class RxConnectionPoolProviderImpl implements RxConnectionPoolProvider, C
 				break;
 			case "mysql":
 				MySQLConnectOptions mysqlOptions = new MySQLConnectOptions()
-						.setPort( uri.getPort() )
 						.setHost( uri.getHost() )
 						.setDatabase( database )
 						.setUser( username );
+				if ( uri.getPort()>0 ) {
+					mysqlOptions.setPort( uri.getPort() );
+				}
 				if (password != null) {
 					mysqlOptions.setPassword( password );
 				}
 				this.pool = MySQLPool.pool(Vertx.vertx(), mysqlOptions, poolOptions);
+				break;
+			case "sqlserver":
+				MSSQLConnectOptions mssqlOptions = new MSSQLConnectOptions()
+						.setHost( uri.getHost() )
+						.setUser( username );
+				if ( uri.getPort()>0 ) {
+					mssqlOptions.setPort( uri.getPort() );
+				}
+				if (password != null) {
+					mssqlOptions.setPassword( password );
+				}
+				this.pool = MSSQLPool.pool(Vertx.vertx(), mssqlOptions, poolOptions);
 				break;
 		}
 
